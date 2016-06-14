@@ -99,7 +99,12 @@ function fn_pre_check_setup
 
             # Check apache
             fn_check_nginx
+        else
+            pre_check_has_errors=1
         fi
+
+        # Validate PHP - needs more work
+        fn_get_bin_for_validate php fn_validate_php
 
         # Check mysql
 
@@ -144,6 +149,27 @@ function fn_pre_check_setup
     echo -e ""
 }
 
+# Get bin for validation. Expects arg 1 = search, arg 2 = callback function
+function fn_get_bin_for_validate ()
+{
+    search=$1
+    callback=$2
+
+    if which $1 > /dev/null 2>&1; then
+        out="$(which $1)"
+        ${callback}
+        return 1
+    fi
+
+    return 0
+}
+
+# Validate PHP
+function fn_validate_php
+{
+    echo "Validating PHP..."
+}
+
 # Check apache
 function fn_check_apache
 {
@@ -186,6 +212,8 @@ function fn_check_nginx
     else
         echo -ne "${YELLOW}TODO: implement nginx check.${NC}"
     fi
+
+    echo -ne "${YELLOW}TODO: implement nginx check.${NC}"
 }
 
 # Display input to continue setup
@@ -267,6 +295,7 @@ function fn_composer_create_project
 function fn_create_git_ignore
 {
 cat > "$TRUE_INSTALL_PATH_VALUE"/.gitignore << EOF
+# IDE
 /.buildpath
 /.cache
 /.metadata
@@ -274,10 +303,10 @@ cat > "$TRUE_INSTALL_PATH_VALUE"/.gitignore << EOF
 /.settings
 atlassian*
 /nbproject
-/sitemap
 /.idea
 /.gitattributes
 
+# Magento
 /app/code/Magento
 /app/design/*/Magento
 /app/etc
@@ -342,6 +371,8 @@ atlassian*
 !/composer.lock
 !/README.md
 !/app/etc/config.php
+
+/sitemap
 
 EOF
 }
