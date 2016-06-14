@@ -6,6 +6,14 @@
 #
 # TODO: make global vars uppercase so easier to tell them apart
 
+if [ "$1" == "test" ]; then
+    MODE=$1
+else
+    MODE=normal
+fi
+
+echo "Running ${MODE} mode"
+
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -198,7 +206,7 @@ function fn_error_continue_setup_input
 function fn_use_current_dir_input
 {
     INSTALL_PATH_VALUE=$(pwd)"/"
-    echo -ne "${YELLOW}Install in current directory '${INSTALL_PATH_VALUE}' [y/n]: ${NC}"
+    echo -ne "${YELLOW}Install in current directory '${INSTALL_PATH_VALUE}' [y/n]: ${NC}\n"
     read use_current_dir_value
 
     if [ "$use_current_dir_value" != "y" ]; then
@@ -218,7 +226,7 @@ function fn_set_current_install_path_input
     done
 
     while [ ! -d "$new_install_path" ]; do
-        echo -e "${RED}ERROR: The install directory does not exist!${NC}"
+        echo -e "${RED}ERROR: The install directory '${new_install_path}' does not exist!${NC}"
         fn_set_current_install_path_input
     done
 
@@ -233,7 +241,7 @@ function fn_set_current_install_path_input
 # Display input for project name
 function fn_project_name_input
 {
-    echo -ne "${YELLOW}Magento 2 Project Name: ${NC}"
+    echo -ne "${YELLOW}Magento 2 Project Name: ${NC}\n"
     read PROJECT_NAME_VALUE
 
     while [ "$PROJECT_NAME_VALUE" = "" ]; do
@@ -351,8 +359,17 @@ fn_use_current_dir_input
 
 fn_project_name_input
 
-fn_composer_create_project
+# REVIEW HERE
 
-fn_create_git_ignore
+echo -e "\n${BLUE}Review...${NC}\n"
+echo -e "${YELLOW}Install path is '${TRUE_INSTALL_PATH_VALUE}'${NC}\n"
+
+if [ ! "$MODE" == "test" ]; then
+    fn_composer_create_project
+
+    fn_create_git_ignore
+fi
+
+echo -e "${GREEN}Complete!${NC}\n"
 
 exit 0
