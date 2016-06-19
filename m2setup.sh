@@ -1,41 +1,233 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Magento 2 setup
 #
-# File: m2setup.sh
+#   File: m2setup.sh
 #
-# Description: Create magento 2 project + install
-#
-# TODO: make global vars uppercase so easier to tell them apart
+#   Description: Create magento 2 project + install
 
-if [ "$1" == "test" ]; then
-    MODE=$1
-else
-    MODE=normal
+readonly VERSION="1.0.1"
+readonly SCRIPT=${0##*/}
+readonly USAGE="\
+M2Setup (v$VERSION)
+
+Global Commands:
+  $SCRIPT <command>
+------------------------------
+  -h, --help         display this help message
+  --test             enable test mode
+  --version          display the M2Setup script's version
+------------------------------
+"
+
+ACTION=$1; shift
+MODE="normal"
+
+# Handle "--help" command
+if [ "$ACTION" = "--help" -o "$ACTION" = "-h" ]; then
+
+  echo -e "$USAGE"
+  exit 0
+
+# Handle "--test" command
+elif [ "$ACTION" = "--test" ]; then
+
+  MODE="test"
+
+# Handle "--version" command
+elif [ "$ACTION" = "--version" ]; then
+
+  echo "M2Setup: $VERSION"
+  exit 0
+
 fi
 
-echo "Running ${MODE} mode"
+readonly BLUE='\033[0;34m'
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly NC='\033[0m' # No Color
 
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+CURRENT_SYSTEM="UNKNOWN"
 
-arr_server_types=("Apache" "Nginx")
-arr_apache_versions=(2.2 2.4)
-arr_nginx_versions=(1.8) # Or higher. Need to figure out how to do this
+readonly SUPPORTED_OS=("BSD" "GNU")
+readonly ARR_SERVER_TYPES=("Apache" "Nginx")
+readonly ARR_APACHE_VERSIONS=("2.2" "2.4")
+readonly ARR_NGINX_VERSIONS=("1.8>x.x")
+readonly ARR_DB_TYPES=("mysql")
+readonly ARR_DB_VERSIONS=("5.6>x.x")
+readonly ARR_PHP_VERSIONS=("5.5.22>5.5.x" "5.6.0>5.6.x" "7.0.2" "7.0.3" "7.0.4" "7.0.6") # Known issue with PHP 7.0.5
+readonly ARR_PHP5_EXTS=("curl" "gd" "ImageMagick 6.3.7>x.x.x" "intl" "mbstring" "mcrypt" "mhash" "openssl" "PDO/MySQL"
+ "SimpleXML" "soap" "xml" "xsl" "zip")
+readonly ARR_PHP7_EXTS=("json" "iconv")
 
-arr_db_types=("mysql" "Oracle" "Percona")
-arr_mysql_versions=(5.6) # Or higher. Need to figure out how to do this
+readonly E_OS_TYPE="OS not supported!"
+readonly E_DETECT_PHP="Cannot detect PHP!"
+readonly E_VALIDATE_PHP="Cannot validate PHP!"
+readonly E_VERSION_PHP="Cannot detect PHP version!"
+readonly E_SERVER_TYPE="Cannot detect server type!"
+readonly E_SERVER_VERSION="Cannot detect server version!"
 
-arr_php_versions=(5.5.22 5.6.x 7.0.2 7.0.3 7.0.4 7.0.6) # 5.5.22 or greater, any 5.6.x and not 7.0.5
+readonly EXT_VALIDATE=validate.php
 
-arr_php_extensions=("bc-math" "curl" "gd" "ImageMagick 6.3.7" "intl" "mbstring" "mcrypt" "mhash" "openssl" "PDO/MySQL" "SimpleXML" "soap" "xml" "xsl" "zip") # bc-math for ee only, ImageMagick 6.3.7 or later
-arr_php7_additional_extensions=("json" "iconv")
+ERROR_EXISTS_PHP_DETECT=0;
 
-server_type_result="${RED}Cannot detect server type!${NC}"
-server_version_result="${RED}Cannot detect server version!${NC}"
+echo "Running in ${MODE} mode."
 
-pre_check_has_errors=0
+#######################################
+# Print error
+#
+# Usage:
+#   fn_error "An error occurred."
+# Globals:
+#   None
+# Arguments:
+#   (string) error
+# Returns:
+#   None
+#######################################
+fn_error ()
+{
+  error=$1
+
+  if [[ -n ${error} ]]; then
+    echo -e "${RED}Error - ${error}${NC}"
+  fi
+}
+
+#######################################
+# Validate system
+#
+# Usage:
+#   fn_if_nix gnu
+# Global:
+#   OSTYPE
+#   CURRENT_SYSTEM
+# Arguments:
+#   (string) system
+# Returns:
+#   None
+#######################################
+fn_validate_system ()
+{
+  case "$OSTYPE" in
+    *linux*|*hurd*|*msys*|*cygwin*|*sua*|*interix*) CURRENT_SYSTEM="GNU";;
+    *bsd*|*darwin*) CURRENT_SYSTEM="BSD";;
+    *sunos*|*solaris*|*indiana*|*illumos*|*smartos*) CURRENT_SYSTEM="SUN";;
+  esac
+
+  echo -e "${YELLOW}OS Type: ${NC}${OSTYPE}"
+  echo -e "${YELLOW}System: ${NC}${CURRENT_SYSTEM}"
+
+  # Check if OS supported
+  if [[ ! " ${SUPPORTED_OS[@]} " =~ " ${CURRENT_SYSTEM} " ]]; then
+    # If not supported, display error and exit
+    fn_error "$E_OS_TYPE" && exit 1
+  fi
+}
+
+#######################################
+# Get bin path for validation
+#
+# Usage:
+#   fn_get_bin_path_for_validate php fn_validate_php
+# Globals:
+#   None
+# Arguments:
+#   (command) search
+#   (function) callback
+# Returns:
+#   bool
+#######################################
+fn_get_bin_path_for_validate ()
+{
+    search=$1
+    callback=$2
+
+    if which $1 > /dev/null 2>&1; then
+        local path="$(which $1)"
+        ${callback} "$path"
+        return 1
+    fi
+
+    return 0
+}
+
+#######################################
+# Validate PHP
+#
+# Usage:
+#   fn_validate_php "bin_path"
+# Globals:
+#   None
+# Arguments:
+#   string bin_path
+# Returns:
+#   None
+#######################################
+fn_validate_php ()
+{
+  if [ -z "$1" ]; then
+    # If PHP bin path empty, display error and exit
+    fn_error "$E_VALIDATE_PHP" && exit 1
+  else
+    fn_run_external_validation $1
+
+    exit;
+
+    local out_version="$($1 -v)"
+
+    if [[ -n ${out_version} ]]; then
+      # Use internal expression to get version
+      local version=${out_version:4:5}
+
+      #version="5.5.22>5.5.x"
+      version="5.5.22"
+
+      # Check version
+      if [[ " ${ARR_PHP_VERSIONS[@]} " =~ " ${version} " ]]; then
+        output="${version}${GREEN} OK${NC}"
+      else
+        output="${version}${RED} NOT OK${NC}"
+      fi
+    else
+      # If cant detect version, fetch error for output
+      output=$(fn_error "$E_VERSION_PHP")
+    fi
+
+    echo -e "${YELLOW}PHP Version:${NC} ${output}"
+    echo -e ""
+  fi
+}
+
+fn_run_external_validation ()
+{
+  local php_bin=$1
+
+  # Absolute path of current script
+  local absolute_path=`echo $0 | sed 's/m2setup\.sh//g'`
+
+  if ! ps auxwww | grep "$absolute_path""$EXT_VALIDATE" | grep -v grep 1>/dev/null 2>/dev/null ; then
+      "$php_bin" "$absolute_path""$EXT_VALIDATE"
+  fi
+}
+
+# 1. Validate system
+echo -e "${BLUE}Validating system...${NC}\n"
+fn_validate_system
+
+# 2. Validate PHP
+echo -e "${BLUE}Validating PHP...${NC}\n"
+if fn_get_bin_path_for_validate php fn_validate_php; then
+  # If PHP undetected, display error and exit
+  fn_error "$E_DETECT_PHP" && exit 1
+fi
+
+# 3. Validate server
+#fn_validate_server
+
+exit 1;
+
+## Most of below is deprecated!!!
 
 # Pre check system requirements
 function fn_pre_check_setup
@@ -103,8 +295,7 @@ function fn_pre_check_setup
             pre_check_has_errors=1
         fi
 
-        # Validate PHP - needs more work
-        fn_get_bin_for_validate php fn_validate_php
+
 
         # Check mysql
 
@@ -149,27 +340,6 @@ function fn_pre_check_setup
     echo -e ""
 }
 
-# Get bin for validation. Expects arg 1 = search, arg 2 = callback function
-function fn_get_bin_for_validate ()
-{
-    search=$1
-    callback=$2
-
-    if which $1 > /dev/null 2>&1; then
-        out="$(which $1)"
-        ${callback}
-        return 1
-    fi
-
-    return 0
-}
-
-# Validate PHP
-function fn_validate_php
-{
-    echo "Validating PHP..."
-}
-
 # Check apache
 function fn_check_apache
 {
@@ -184,7 +354,7 @@ function fn_check_apache
             server_ver=${out_server_ver:23:3}
 
             # Check server type
-            if [[ " ${arr_server_types[@]} " =~ " ${server_type} " ]]; then
+            if [[ " ${ARR_SERVER_TYPES[@]} " =~ " ${server_type} " ]]; then
                 server_type_result="${server_type}${GREEN} OK${NC}"
             else
                 server_type_result="${server_type}${RED} NOT OK${NC}"
@@ -192,7 +362,7 @@ function fn_check_apache
             fi
 
             # Check server ver
-            if [[ " ${arr_apache_versions[@]} " =~ " ${server_ver} " ]]; then
+            if [[ " ${ARR_APACHE_VERSIONS[@]} " =~ " ${server_ver} " ]]; then
                 server_version_result="${server_ver}${GREEN} OK${NC}"
             else
                 server_version_result="${server_ver}${RED} NOT OK${NC}"
