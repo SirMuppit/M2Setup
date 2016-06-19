@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/SirMuppit/m2setup.svg?branch=master)](https://travis-ci.org/SirMuppit/m2setup)
+[![Build Status](https://travis-ci.org/SirMuppit/M2Setup.svg?branch=master)](https://travis-ci.org/SirMuppit/M2Setup)
 
 # [Deprecated] M2Setup
 Magento 2 command line setup script.
